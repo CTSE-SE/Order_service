@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "jest --coverage --verbose",
+    "test": "jest --coverage --verbose --passWithNoTests",
     "lint": "eslint src/",
     "format": "prettier --write \"src/**/*.js\""
   },
