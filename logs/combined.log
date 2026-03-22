@@ -3,3 +3,7 @@
 2026-03-22T14:18:45.195Z [info]: Environment: development 
 2026-03-22T14:18:50.019Z [info]: ✅ MongoDB Connected: ac-qtac3j4-shard-00-00.b1uvqpy.mongodb.net 
 2026-03-22T14:20:20.948Z [info]: GET /health {"ip":"::1","userAgent":"PostmanRuntime/7.49.1"}
+2026-03-22T15:38:52.085Z [info]: Attempting to connect to MongoDB... 
+2026-03-22T15:38:52.094Z [info]: Order Service running on port 3000 
+2026-03-22T15:38:52.094Z [info]: Environment: development 
+2026-03-22T15:38:56.191Z [info]: ✅ MongoDB Connected: ac-qtac3j4-shard-00-00.b1uvqpy.mongodb.net 
