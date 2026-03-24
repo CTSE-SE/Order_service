@@ -128,9 +128,9 @@ name: CI/CD Pipeline – Order Service
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 env:
   AWS_REGION: ap-southeast-1
@@ -141,9 +141,9 @@ env:
 
 jobs:
 
-  # ───────────────────────────────
+  # ─────────────────────────────────────────────
   # JOB 1: TEST
-  # ───────────────────────────────
+  # ─────────────────────────────────────────────
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -160,16 +160,20 @@ jobs:
           --health-retries=5
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-      - run: npm test
+      - name: Run tests
+        run: npm test
         env:
           NODE_ENV: test
           JWT_SECRET: test-secret
@@ -177,45 +181,49 @@ jobs:
           MONGODB_URI: mongodb://localhost:27017/test
 
 
-  # ───────────────────────────────
+  # ─────────────────────────────────────────────
   # JOB 2: SONARCLOUD (FIXED)
-  # ───────────────────────────────
+  # ─────────────────────────────────────────────
   sonarcloud:
     name: SonarCloud Scan
     runs-on: ubuntu-latest
     needs: test
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-      # (Optional but recommended)
-      - run: npm test
+      # Run tests again to generate coverage (optional but recommended)
+      - name: Run tests for Sonar
+        run: npm test
 
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+      - name: SonarCloud Scan (NEW ACTION)
+        uses: SonarSource/sonarqube-scan-action@v5
         with:
           args: >
             -Dsonar.projectKey=CTSE-SE_Order_service
             -Dsonar.organization=ctse-se
+            -Dsonar.host.url=https://sonarcloud.io
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
 
-  # ───────────────────────────────
-  # JOB 3: BUILD & PUSH
-  # ───────────────────────────────
+  # ─────────────────────────────────────────────
+  # JOB 3: BUILD & PUSH DOCKER IMAGE
+  # ─────────────────────────────────────────────
   build-and-push:
-    name: Build & Push
+    name: Build & Push to ECR
     runs-on: ubuntu-latest
     needs: [test, sonarcloud]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -224,33 +232,40 @@ jobs:
       image: ${{ steps.build-image.outputs.image }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - id: login-ecr
+      - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - id: build-image
+      - name: Build, tag, and push Docker image
+        id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker build \
+            --tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            --tag $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
+
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
 
-  # ───────────────────────────────
-  # JOB 4: DEPLOY
-  # ───────────────────────────────
+  # ─────────────────────────────────────────────
+  # JOB 4: DEPLOY TO ECS
+  # ─────────────────────────────────────────────
   deploy:
     name: Deploy to ECS
     runs-on: ubuntu-latest
@@ -258,29 +273,33 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get current task definition
+      - name: Download current task definition
         run: |
           aws ecs describe-task-definition \
             --task-definition ${{ env.ECS_SERVICE }} \
             --query taskDefinition \
             > task-definition.json
 
-      - id: task-def
+      - name: Update task definition with new image
+        id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ needs.build-and-push.outputs.image }}
 
-      - uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE }}
