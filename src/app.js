@@ -2,9 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const swaggerUi = require('swagger-ui-express');
+const YAML = require('yamljs');
 const orderRoutes = require('./routes/order.routes');
 const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
+
+const swaggerDocument = YAML.load('./swagger.yaml');
 
 const app = express();
 
@@ -40,6 +44,10 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Swagger API docs
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+app.use('/api/orders/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Routes
 app.use('/api/orders', orderRoutes);

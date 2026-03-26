@@ -22,8 +22,10 @@
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.20.0",
     "sequelize": "^6.37.8",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^9.0.0",
-    "winston": "^3.10.0"
+    "winston": "^3.10.0",
+    "yamljs": "^0.3.0"
   },
   "devDependencies": {
     "eslint": "^8.49.0",
