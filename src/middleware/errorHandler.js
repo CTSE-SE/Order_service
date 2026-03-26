@@ -8,16 +8,16 @@ const errorHandler = (err, req, res, next) => {
     method: req.method
   });
 
-  // Mongoose validation error
-  if (err.name === 'ValidationError') {
+  // Sequelize validation error
+  if (err.name === 'SequelizeValidationError') {
     return res.status(400).json({
       success: false,
-      error: Object.values(err.errors).map(e => e.message).join(', ')
+      error: err.errors.map(e => e.message).join(', ')
     });
   }
 
-  // Mongoose duplicate key error
-  if (err.code === 11000) {
+  // Sequelize unique constraint error
+  if (err.name === 'SequelizeUniqueConstraintError') {
     return res.status(400).json({
       success: false,
       error: 'Duplicate field value entered'

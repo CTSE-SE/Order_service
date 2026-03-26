@@ -1,84 +1,88 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const orderItemSchema = new mongoose.Schema({
-  productId: {
-    type: String,
-    required: true
+const Order = sequelize.define('Order', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
   },
-  name: {
-    type: String,
-    required: true
-  },
-  price: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  quantity: {
-    type: Number,
-    required: true,
-    min: 1
-  },
-  totalPrice: {
-    type: Number,
-    required: true
-  }
-});
-
-const orderSchema = new mongoose.Schema({
   orderId: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true
   },
   userId: {
-    type: String,
-    required: true,
-    index: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   userEmail: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
-  items: [orderItemSchema],
   totalAmount: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0
   },
   status: {
-    type: String,
-    enum: ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'],
-    default: 'PENDING'
+    type: DataTypes.ENUM('PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'),
+    defaultValue: 'PENDING'
   },
   paymentStatus: {
-    type: String,
-    enum: ['PENDING', 'PAID', 'FAILED'],
-    default: 'PENDING'
+    type: DataTypes.ENUM('PENDING', 'PAID', 'FAILED'),
+    defaultValue: 'PENDING'
   },
   shippingAddress: {
-    street: String,
-    city: String,
-    postalCode: String,
-    country: String
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.JSONB,
+    allowNull: true
   }
+}, {
+  tableName: 'orders',
+  timestamps: true,
+  indexes: [
+    { fields: ['userId'] },
+    { fields: ['orderId'], unique: true }
+  ]
 });
 
-orderSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
+const OrderItem = sequelize.define('OrderItem', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
+  productId: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  price: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false
+  },
+  quantity: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  totalPrice: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false
+  }
+}, {
+  tableName: 'order_items',
+  timestamps: false
 });
+
+// Associations
+Order.hasMany(OrderItem, { as: 'items', foreignKey: 'orderId', sourceKey: 'id', onDelete: 'CASCADE' });
+OrderItem.belongsTo(Order, { foreignKey: 'orderId', targetKey: 'id' });
 
 // Generate order ID with prefix
-orderSchema.statics.generateOrderId = function() {
+Order.generateOrderId = function () {
   const date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -87,4 +91,4 @@ orderSchema.statics.generateOrderId = function() {
   return `ORD-${year}${month}${day}-${random}`;
 };
 
-module.exports = mongoose.model('Order', orderSchema);
+module.exports = { Order, OrderItem };

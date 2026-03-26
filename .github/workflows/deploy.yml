@@ -1,136 +1,10 @@
-# name: CI/CD Pipeline
-
-# on:
-#   push:
-#     branches: [ master ]
-#   pull_request:
-#     branches: [ master ]
-
-# env:
-#   AWS_REGION: ap-southeast-1
-#   ECR_REPOSITORY: order-service
-#   ECS_SERVICE: order-service
-#   ECS_CLUSTER: shopapp-cluster
-#   ECS_TASK_DEFINITION: task-definition.json
-
-# jobs:
-#   test:
-#     name: Test
-#     runs-on: ubuntu-latest
-
-#     services:
-#       mongodb:
-#         image: mongo:6
-#         ports:
-#           - 27017:27017
-#         options: >-
-#           --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })'"
-#           --health-interval=10s
-#           --health-timeout=5s
-#           --health-retries=5
-
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-
-#       - name: Setup Node.js
-#         uses: actions/setup-node@v4
-#         with:
-#           node-version: '20'
-#           cache: 'npm'
-
-#       - name: Install dependencies
-#         run: npm ci
-
-#       # OPTIONAL (enable later if lint is clean)
-#       # - name: Run linting
-#       #   run: npm run lint
-
-#       - name: Run tests
-#         run: npm test
-#         env:
-#           NODE_ENV: test
-#           JWT_SECRET: test-secret
-#           INTERNAL_API_KEY: test-key
-#           MONGODB_URI: mongodb://localhost:27017/test
-
-#   sonarcloud:
-#     name: SonarCloud SAST
-#     runs-on: ubuntu-latest
-#     needs: test
-
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-#         with:
-#           fetch-depth: 0
-
-#       - name: SonarCloud Scan
-#         uses: SonarSource/sonarcloud-github-action@master
-#         env:
-#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-#   build-and-deploy:
-#     name: Build & Deploy
-#     runs-on: ubuntu-latest
-#     needs: sonarcloud
-#     if: github.ref == 'refs/heads/main'
-
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-
-#       - name: Configure AWS credentials
-#         uses: aws-actions/configure-aws-credentials@v4
-#         with:
-#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#           aws-region: ${{ env.AWS_REGION }}
-
-#       - name: Login to Amazon ECR
-#         id: login-ecr
-#         uses: aws-actions/amazon-ecr-login@v2
-
-#       - name: Build, tag, and push image to Amazon ECR
-#         id: build-image
-#         env:
-#           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-#           IMAGE_TAG: ${{ github.sha }}
-#         run: |
-#           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-#           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-#           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-#       - name: Download task definition
-#         run: |
-#           aws ecs describe-task-definition --task-definition $ECR_REPOSITORY \
-#             --query taskDefinition > task-definition.json
-
-#       - name: Fill in new image in ECS task definition
-#         id: task-def
-#         uses: aws-actions/amazon-ecs-render-task-definition@v1
-#         with:
-#           task-definition: task-definition.json
-#           container-name: ${{ env.ECR_REPOSITORY }}
-#           image: ${{ steps.build-image.outputs.image }}
-
-#       - name: Deploy to Amazon ECS
-#         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-#         with:
-#           task-definition: ${{ steps.task-def.outputs.task-definition }}
-#           service: ${{ env.ECS_SERVICE }}
-#           cluster: ${{ env.ECS_CLUSTER }}
-#           wait-for-service-stability: true
-
-
-name: CI/CD Pipeline – Order Service
+name: CI/CD Pipeline - Order Service
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 env:
   AWS_REGION: ap-southeast-1
@@ -149,15 +23,19 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      mongodb:
-        image: mongo:6
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: order_db_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         ports:
-          - 27017:27017
+          - 5432:5432
         options: >-
-          --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })'"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -176,13 +54,18 @@ jobs:
         run: npm test
         env:
           NODE_ENV: test
+          PORT: 3002
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: order_db_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
           JWT_SECRET: test-secret
           INTERNAL_API_KEY: test-key
-          MONGODB_URI: mongodb://localhost:27017/test
-
+          SQS_QUEUE_URL: dummy
 
   # ─────────────────────────────────────────────
-  # JOB 2: SONARCLOUD (FIXED)
+  # JOB 2: SONARCLOUD
   # ─────────────────────────────────────────────
   sonarcloud:
     name: SonarCloud Scan
@@ -204,11 +87,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Run tests again to generate coverage (optional but recommended)
       - name: Run tests for Sonar
         run: npm test
 
-      - name: SonarCloud Scan (NEW ACTION)
+      - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5
         with:
           args: >
@@ -217,7 +99,6 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
 
   # ─────────────────────────────────────────────
   # JOB 3: BUILD & PUSH DOCKER IMAGE
@@ -262,7 +143,6 @@ jobs:
 
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-
   # ─────────────────────────────────────────────
   # JOB 4: DEPLOY TO ECS
   # ─────────────────────────────────────────────
@@ -288,7 +168,9 @@ jobs:
           aws ecs describe-task-definition \
             --task-definition ${{ env.ECS_SERVICE }} \
             --query taskDefinition \
-            > task-definition.json
+            > task-definition-raw.json
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .enableFaultInjection)' \
+            task-definition-raw.json > task-definition.json
 
       - name: Update task definition with new image
         id: task-def
@@ -305,3 +187,16 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
+
+      - name: Verify deployment health check
+        run: |
+          echo "Waiting 20s for new task to start..."
+          sleep 20
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            http://shopapp-alb-1013507396.ap-southeast-1.elb.amazonaws.com/api/orders/health)
+          echo "Health check response: $RESPONSE"
+          if [ "$RESPONSE" != "200" ]; then
+            echo "Health check failed with status $RESPONSE"
+            exit 1
+          fi
+          echo "Deployment successful and healthy!"

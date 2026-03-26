@@ -1,8 +1,10 @@
-const Order = require('../models/Order');
+const { Order, OrderItem } = require('../models/Order');
 const userService = require('./user.service');
 const productService = require('./product.service');
 const sqsService = require('./sqs.service');
 const logger = require('../utils/logger');
+
+const includeItems = { include: [{ model: OrderItem, as: 'items' }] };
 
 class OrderService {
   async createOrder(orderData, jwtToken) {
@@ -18,47 +20,55 @@ class OrderService {
 
     for (const item of orderData.items) {
       const reservation = await productService.reserveStock(item.productId, item.quantity);
-      
+
       if (!reservation.success) {
-        // Rollback any already reserved items
         await this.rollbackReservations(reservedItems);
         throw new Error(reservation.error);
       }
-      
+
       reservedItems.push({
         productId: item.productId,
         quantity: item.quantity,
         price: reservation.product.price,
         name: reservation.product.name
       });
-      
+
       totalAmount += reservation.product.price * item.quantity;
     }
 
     // 3. Create order in database
-    const order = new Order({
+    const order = await Order.create({
       orderId: Order.generateOrderId(),
       userId: userValidation.userId,
       userEmail: userValidation.email,
-      items: reservedItems.map(item => ({
-        productId: item.productId,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        totalPrice: item.price * item.quantity
-      })),
       totalAmount,
       status: 'CONFIRMED',
       shippingAddress: orderData.shippingAddress
     });
 
-    await order.save();
-    logger.info('Order created successfully', { orderId: order.orderId, userId: order.userId });
+    // Create order items
+    const itemRecords = await Promise.all(
+      reservedItems.map(item =>
+        OrderItem.create({
+          orderId: order.id,
+          productId: item.productId,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          totalPrice: item.price * item.quantity
+        })
+      )
+    );
+
+    // Reload with items
+    const fullOrder = await Order.findByPk(order.id, includeItems);
+
+    logger.info('Order created successfully', { orderId: fullOrder.orderId, userId: fullOrder.userId });
 
     // 4. Publish event to SQS for notification
-    await sqsService.publishOrderPlacedEvent(order);
+    await sqsService.publishOrderPlacedEvent(fullOrder);
 
-    return order;
+    return fullOrder;
   }
 
   async rollbackReservations(reservedItems) {
@@ -80,12 +90,11 @@ class OrderService {
       throw new Error('Invalid user');
     }
 
-    const order = await Order.findOne({ orderId });
+    const order = await Order.findOne({ where: { orderId }, ...includeItems });
     if (!order) {
       throw new Error('Order not found');
     }
 
-    // Check if user owns this order
     if (order.userId !== userValidation.userId) {
       throw new Error('Unauthorized to view this order');
     }
@@ -103,25 +112,27 @@ class OrderService {
       throw new Error('Unauthorized to view these orders');
     }
 
-    const orders = await Order.find({ userId }).sort({ createdAt: -1 });
+    const orders = await Order.findAll({
+      where: { userId },
+      order: [['createdAt', 'DESC']],
+      ...includeItems
+    });
     return orders;
   }
 
   async updateOrderStatus(orderId, newStatus, jwtToken) {
-    // Validate admin privileges (you might want to add admin check)
     const userValidation = await userService.validateUser(jwtToken);
     if (!userValidation.valid) {
       throw new Error('Invalid user');
     }
 
-    const order = await Order.findOne({ orderId });
+    const order = await Order.findOne({ where: { orderId }, ...includeItems });
     if (!order) {
       throw new Error('Order not found');
     }
 
     const oldStatus = order.status;
     order.status = newStatus;
-    order.updatedAt = Date.now();
     await order.save();
 
     logger.info('Order status updated', {
@@ -145,7 +156,7 @@ class OrderService {
 
   async cancelOrder(orderId, jwtToken) {
     const order = await this.updateOrderStatus(orderId, 'CANCELLED', jwtToken);
-    
+
     // Release reserved stock
     for (const item of order.items) {
       try {
@@ -158,7 +169,7 @@ class OrderService {
         });
       }
     }
-    
+
     return order;
   }
 }

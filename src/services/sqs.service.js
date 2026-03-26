@@ -3,13 +3,20 @@ const logger = require('../utils/logger');
 
 class SQSService {
   constructor() {
-    this.sqsClient = new SQSClient({
-      region: process.env.AWS_REGION || 'ap-southeast-1',
-      credentials: {
+    const config = {
+      region: process.env.AWS_REGION || 'ap-southeast-1'
+    };
+
+    // Use explicit credentials only if provided (locally).
+    // On ECS, the SDK picks up the task IAM role automatically.
+    if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_ACCESS_KEY_ID !== 'dummy') {
+      config.credentials = {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-      }
-    });
+      };
+    }
+
+    this.sqsClient = new SQSClient(config);
     this.queueUrl = process.env.SQS_QUEUE_URL;
   }
 
@@ -72,20 +79,18 @@ class SQSService {
     try {
       const params = {
         QueueUrl: this.queueUrl,
-        MessageBody: JSON.stringify(message),
-        MessageDeduplicationId: `${message.eventType}-${message.orderId}-${Date.now()}`,
-        MessageGroupId: `order-${message.orderId}`
+        MessageBody: JSON.stringify(message)
       };
 
       const command = new SendMessageCommand(params);
       const result = await this.sqsClient.send(command);
-      
+
       logger.info('SQS message published successfully', {
         eventType: message.eventType,
         orderId: message.orderId,
         messageId: result.MessageId
       });
-      
+
       return result;
     } catch (error) {
       logger.error('Failed to publish SQS message', {
@@ -93,7 +98,8 @@ class SQSService {
         orderId: message.orderId,
         error: error.message
       });
-      throw error;
+      // Non-fatal: don't block order operations if SQS fails
+      return null;
     }
   }
 }
