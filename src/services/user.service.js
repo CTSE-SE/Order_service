@@ -16,7 +16,7 @@ class UserService {
 
   async validateUser(jwtToken) {
     try {
-      const response = await this.client.get('/auth/validate', {
+      const response = await this.client.get('/api/users/auth/validate', {
         headers: {
           'Authorization': `Bearer ${jwtToken}`
         }
