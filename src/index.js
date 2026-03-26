@@ -1,5 +1,7 @@
-// Load environment variables FIRST
-require('dotenv').config();
+// Load environment variables FIRST (skip in production — ECS task definition provides them)
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 const app = require('./app');
 const logger = require('./utils/logger');
