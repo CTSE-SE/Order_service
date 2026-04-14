@@ -16,7 +16,7 @@ class ProductService {
 
   async reserveStock(productId, quantity) {
     try {
-      const response = await this.client.post(`/api/products/${productId}/reserve`, {
+      const response = await this.client.post(`/api/restaurants/products/${productId}/reserve`, {
         quantity
       });
       
@@ -47,7 +47,7 @@ class ProductService {
 
   async getProductDetails(productId) {
     try {
-      const response = await this.client.get(`/api/products/${productId}`);
+      const response = await this.client.get(`/api/restaurants/products/${productId}`);
       return response.data;
     } catch (error) {
       logger.error('Failed to fetch product details', { productId, error: error.message });
@@ -57,7 +57,7 @@ class ProductService {
 
   async bulkGetProducts(productIds) {
     try {
-      const response = await this.client.post('/api/products/bulk', {
+      const response = await this.client.post('/api/restaurants/products/bulk', {
         productIds
       });
       return response.data;
