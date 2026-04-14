@@ -30,13 +30,19 @@ class OrderController {
         });
       }
       
-      if (error.message === 'Product not found' || error.message.includes('Insufficient stock')) {
+      if (
+        error.message === 'Product not found' ||
+        error.message.includes('Insufficient stock') ||
+        error.message.includes('unavailable') ||
+        error.message.includes('Product service') ||
+        error.message.includes('auth failed')
+      ) {
         return res.status(400).json({
           success: false,
           error: error.message
         });
       }
-      
+
       next(error);
     }
   }

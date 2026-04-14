@@ -29,19 +29,23 @@ class ProductService {
       logger.error('Stock reservation failed', {
         productId,
         quantity,
+        url: `${this.baseURL}/api/restaurants/products/${productId}/reserve`,
         status: error.response?.status,
-        message: error.response?.data?.message || error.message
+        responseData: error.response?.data,
+        message: error.message
       });
-      
+
       if (error.response?.status === 404) {
         return { success: false, error: 'Product not found' };
       }
-      
       if (error.response?.status === 400) {
-        return { success: false, error: error.response.data.message };
+        return { success: false, error: error.response.data?.message || 'Bad request to product service' };
       }
-      
-      throw new Error('Product service unavailable');
+      if (error.response?.status === 403) {
+        return { success: false, error: 'Product service auth failed — check INTERNAL_API_KEY' };
+      }
+
+      return { success: false, error: `Product service unavailable (${error.message})` };
     }
   }
 
