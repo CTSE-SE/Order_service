@@ -22,11 +22,15 @@ class UserService {
         }
       });
       
-      logger.info('User validated successfully', { userId: response.data.userId });
+      // User service returns { valid: true, user: { id, email, role } }
+      const user = response.data.user ?? response.data;
+      const userId = user.id ?? user.userId ?? user._id;
+      const email  = user.email;
+      logger.info('User validated successfully', { userId });
       return {
         valid: true,
-        userId: response.data.userId,
-        email: response.data.email
+        userId,
+        email
       };
     } catch (error) {
       logger.error('User validation failed', {
